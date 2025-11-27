@@ -1,20 +1,22 @@
-import dayjs from 'dayjs';
+import dayjs from "dayjs";
+import { fetchMarketData, MarketData } from "./marketDataService";
 
 export interface AnalysisParameters {
+  market_type?: "A股";
   analysis_date?: string;
+  research_depth?: "快速" | "基础" | "标准" | "深度" | "全面";
+  selected_analysts?: string[];
+  include_sentiment?: boolean;
+  include_risk?: boolean;
+  quick_analysis_model?: string;
+  deep_analysis_model?: string;
   // 预留额外参数，便于后续扩展
   [key: string]: unknown;
 }
 
-interface MarketData {
-  price: number;
-  ma20: number;
-  date: string;
-}
-
 interface NewsItem {
   title: string;
-  impact: 'pos' | 'neg' | string;
+  impact: "pos" | "neg" | string;
 }
 
 interface SentimentData {
@@ -27,7 +29,7 @@ interface FundamentalsData {
 }
 
 interface TradePlan {
-  action: '买入' | '卖出' | '持有';
+  action: "买入" | "卖出" | "持有";
   target: number;
   confidence: number;
   recommendation: string;
@@ -62,11 +64,12 @@ export interface AnalysisResult {
     sentiment_report: string;
     fundamentals_report: string;
     investment_plan: string;
+    trader_investment_plan: string;
     final_trade_decision: string;
     risk_management_decision: string;
   };
   decision: {
-    action: TradePlan['action'];
+    action: TradePlan["action"];
     target_price: number;
     confidence: number;
     risk_score: number;
@@ -80,22 +83,61 @@ export interface AnalysisResult {
 
 export async function runAnalysis({
   symbol,
-  parameters = {}
+  parameters = {},
 }: {
   symbol: string;
   parameters?: AnalysisParameters;
-}): Promise<AnalysisResult> {
-  const analysisDate = parameters.analysis_date ?? dayjs().format('YYYY-MM-DD');
-  const marketInfo: MarketInfo = { market: 'A股', currency: 'CNY' }; // 可替换真实数据源
+}): Promise<any> {
+  if (parameters.market_type && parameters.market_type !== "A股") {
+    throw new Error("仅支持 A 股市场类型");
+  }
+
+  const normalizedAnalysisDate = normalizeAnalysisDate(
+    parameters.analysis_date
+  );
+
+  const normalizedParameters: Required<
+    Pick<
+      AnalysisParameters,
+      | "market_type"
+      | "analysis_date"
+      | "research_depth"
+      | "selected_analysts"
+      | "include_sentiment"
+      | "include_risk"
+      | "quick_analysis_model"
+      | "deep_analysis_model"
+    >
+  > = {
+    market_type: "A股",
+    analysis_date: normalizedAnalysisDate,
+    research_depth: parameters.research_depth ?? "标准",
+    selected_analysts: parameters.selected_analysts ?? [
+      "market",
+      "fundamentals",
+      "news",
+      "social",
+    ],
+    include_sentiment: parameters.include_sentiment ?? true,
+    include_risk: parameters.include_risk ?? true,
+    quick_analysis_model: parameters.quick_analysis_model ?? "qwen-turbo",
+    deep_analysis_model: parameters.deep_analysis_model ?? "qwen-max",
+  };
+
+  validateSymbol(symbol, normalizedAnalysisDate);
+  const marketInfo: MarketInfo = detectMarket(symbol);
+  const includeMarket = normalizedParameters.selected_analysts.includes("market");
 
   // 1) 数据获取：此处为占位实现，便于后续接入行情、新闻、情绪、财报服务
-  const marketData = await fetchMarketData(symbol, analysisDate);
+  const marketData = includeMarket ? await fetchMarketData(symbol, normalizedAnalysisDate) : null;
   const newsData = await fetchNews(symbol);
   const sentimentData = await fetchSentiment(symbol);
   const fundamentalsData = await fetchFundamentals(symbol);
 
   // 2) 分析师阶段：拼装报告
-  const marketReport = buildMarketReport(marketData, marketInfo);
+  const marketReport = includeMarket
+    ? buildMarketReport(marketData, marketInfo)
+    : "【市场】未选择市场分析";
   const newsReport = buildNewsReport(newsData);
   const sentimentReport = buildSentimentReport(sentimentData);
   const fundamentalsReport = buildFundamentalsReport(fundamentalsData);
@@ -113,7 +155,7 @@ export async function runAnalysis({
   return {
     analysis_id: `${symbol}-${Date.now()}`,
     stock_symbol: symbol,
-    analysis_date: analysisDate,
+    analysis_date: normalizedAnalysisDate,
     summary: tradePlan.summary,
     recommendation: tradePlan.recommendation,
     confidence_score: tradePlan.confidence,
@@ -125,8 +167,9 @@ export async function runAnalysis({
       sentiment_report: sentimentReport,
       fundamentals_report: fundamentalsReport,
       investment_plan: researchDecision,
+      trader_investment_plan: tradePlan.recommendation,
       final_trade_decision: tradePlan.recommendation,
-      risk_management_decision: riskDecision.detail
+      risk_management_decision: riskDecision.detail,
     },
     decision: {
       action: tradePlan.action,
@@ -134,19 +177,14 @@ export async function runAnalysis({
       confidence: tradePlan.confidence,
       risk_score: riskDecision.score,
       reasoning: tradePlan.reasoning,
-      model_info: 'rule-based-mock'
+      model_info: "rule-based-mock",
     },
-    performance_metrics: { exec_ms: 0 }
+    performance_metrics: { exec_ms: 0 },
   };
 }
 
-// ===== 以下为占位实现，可替换为真实逻辑 =====
-async function fetchMarketData(symbol: string, date: string): Promise<MarketData> {
-  return { price: 10.5, ma20: 10.1, date };
-}
-
 async function fetchNews(_symbol: string): Promise<NewsItem[]> {
-  return [{ title: '新闻A', impact: 'pos' }];
+  return [{ title: "新闻A", impact: "pos" }];
 }
 
 async function fetchSentiment(_symbol: string): Promise<SentimentData> {
@@ -158,11 +196,11 @@ async function fetchFundamentals(_symbol: string): Promise<FundamentalsData> {
 }
 
 function buildMarketReport(data: MarketData, marketInfo: MarketInfo): string {
-  return `【市场】${marketInfo.market} ${data.date} 收盘 ${data.price}，20日均线 ${data.ma20}`;
+  return `【市场】${marketInfo.market}（${marketInfo.currency}）\n${data.report}`;
 }
 
 function buildNewsReport(items: NewsItem[]): string {
-  return items.map((n) => `【新闻】${n.title} (${n.impact})`).join('\n');
+  return items.map((n) => `【新闻】${n.title} (${n.impact})`).join("\n");
 }
 
 function buildSentimentReport(sentiment: SentimentData): string {
@@ -170,10 +208,15 @@ function buildSentimentReport(sentiment: SentimentData): string {
 }
 
 function buildFundamentalsReport(fundamentals: FundamentalsData): string {
-  return `【基本面】PE=${fundamentals.pe}，增长=${(fundamentals.growth * 100).toFixed(1)}%`;
+  return `【基本面】PE=${fundamentals.pe}，增长=${(
+    fundamentals.growth * 100
+  ).toFixed(1)}%`;
 }
 
-function buildBullView(marketReport: string, fundamentalsReport: string): string {
+function buildBullView(
+  marketReport: string,
+  fundamentalsReport: string
+): string {
   return `看多理由：\n${marketReport}\n${fundamentalsReport}`;
 }
 
@@ -187,16 +230,44 @@ function synthesizeResearch(bullView: string, bearView: string): string {
 
 function buildTradePlan(researchDecision: string): TradePlan {
   return {
-    action: '买入',
+    action: "买入",
     target: 12.3,
     confidence: 0.62,
-    recommendation: '买入，目标价 12.3 元，持有 3-6 个月',
-    summary: '技术面与基本面偏多，短期情绪中性。',
-    keyPoints: ['技术面站上均线', '估值合理'],
-    reasoning: researchDecision
+    recommendation: "买入，目标价 12.3 元，持有 3-6 个月",
+    summary: "技术面与基本面偏多，短期情绪中性。",
+    keyPoints: ["技术面站上均线", "估值合理"],
+    reasoning: researchDecision,
   };
 }
 
 function evaluateRisk(tradePlan: TradePlan): RiskDecision {
-  return { level: '中等', score: 0.35, detail: '波动中等，关注成交量与政策风险' };
+  return {
+    level: "中等",
+    score: 0.35,
+    detail: "波动中等，关注成交量与政策风险",
+  };
+}
+
+function normalizeAnalysisDate(dateInput?: string): string {
+  if (!dateInput) return dayjs().format("YYYY-MM-DD");
+  const parsed = dayjs(dateInput);
+  if (!parsed.isValid()) {
+    throw new Error("analysis_date 无效，需 YYYY-MM-DD 格式");
+  }
+  return parsed.format("YYYY-MM-DD");
+}
+
+function validateSymbol(symbol: string, analysisDate: string): void {
+  if (!/^\d{6}$/.test(symbol)) {
+    throw new Error("仅支持 6 位 A 股代码");
+  }
+  const parsed = dayjs(analysisDate);
+  if (!parsed.isValid()) {
+    throw new Error("分析日期格式错误，需 YYYY-MM-DD");
+  }
+}
+
+function detectMarket(_symbol: string): MarketInfo {
+  // 当前仅支持 A 股，默认使用人民币计价
+  return { market: "A股", currency: "CNY" };
 }

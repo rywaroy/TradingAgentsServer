@@ -25,7 +25,12 @@ export const analyzeSingle = async (
       return res.status(400).json({ success: false, message: '仅支持 6 位 A 股代码' });
     }
 
-    const result = await runAnalysis({ symbol, parameters });
+    if (parameters.market_type && parameters.market_type !== 'A股') {
+      return res.status(400).json({ success: false, message: 'market_type 仅支持 A股' });
+    }
+
+    const normalizedParameters: AnalysisParameters = { ...parameters, market_type: 'A股' };
+    const result = await runAnalysis({ symbol, parameters: normalizedParameters });
     return res.json({ success: true, data: result, message: '分析完成' });
   } catch (error) {
     const message = error instanceof Error ? error.message : '服务异常';

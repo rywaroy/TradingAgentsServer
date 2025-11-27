@@ -1,3 +1,4 @@
+import './config/env';
 import express from 'express';
 import bodyParser from 'body-parser';
 import { analyzeSingle } from './routes/analysis';
