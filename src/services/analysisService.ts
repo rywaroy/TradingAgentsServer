@@ -1,5 +1,6 @@
 import dayjs from "dayjs";
 import { fetchMarketData, MarketData } from "./marketDataService";
+import { fetchNews, NewsItem } from "./newsService";
 
 export interface AnalysisParameters {
   market_type?: "A股";
@@ -12,11 +13,6 @@ export interface AnalysisParameters {
   deep_analysis_model?: string;
   // 预留额外参数，便于后续扩展
   [key: string]: unknown;
-}
-
-interface NewsItem {
-  title: string;
-  impact: "pos" | "neg" | string;
 }
 
 interface SentimentData {
@@ -126,11 +122,16 @@ export async function runAnalysis({
 
   validateSymbol(symbol, normalizedAnalysisDate);
   const marketInfo: MarketInfo = detectMarket(symbol);
-  const includeMarket = normalizedParameters.selected_analysts.includes("market");
+  const includeMarket =
+    normalizedParameters.selected_analysts.includes("market");
+  const includeNews =
+    normalizedParameters.selected_analysts.includes("news");
 
   // 1) 数据获取：此处为占位实现，便于后续接入行情、新闻、情绪、财报服务
-  const marketData = includeMarket ? await fetchMarketData(symbol, normalizedAnalysisDate) : null;
-  const newsData = await fetchNews(symbol);
+  const marketData = includeMarket
+    ? await fetchMarketData(symbol, normalizedAnalysisDate)
+    : null;
+  const newsData = includeNews ? await fetchNews(symbol) : [];
   const sentimentData = await fetchSentiment(symbol);
   const fundamentalsData = await fetchFundamentals(symbol);
 
@@ -183,10 +184,6 @@ export async function runAnalysis({
   };
 }
 
-async function fetchNews(_symbol: string): Promise<NewsItem[]> {
-  return [{ title: "新闻A", impact: "pos" }];
-}
-
 async function fetchSentiment(_symbol: string): Promise<SentimentData> {
   return { score: 0.2 };
 }
@@ -195,8 +192,11 @@ async function fetchFundamentals(_symbol: string): Promise<FundamentalsData> {
   return { pe: 15, growth: 0.12 };
 }
 
-function buildMarketReport(data: MarketData, marketInfo: MarketInfo): string {
-  return `【市场】${marketInfo.market}（${marketInfo.currency}）\n${data.report}`;
+function buildMarketReport(
+  data: MarketData | null,
+  marketInfo: MarketInfo
+): string {
+  return `【市场】${marketInfo.market}（${marketInfo.currency}）\n${data?.report}`;
 }
 
 function buildNewsReport(items: NewsItem[]): string {
