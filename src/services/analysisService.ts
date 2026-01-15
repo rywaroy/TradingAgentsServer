@@ -1,6 +1,7 @@
 import dayjs from "dayjs";
 import { fetchMarketData, MarketData } from "./marketDataService";
 import { fetchNews, NewsItem } from "./newsService";
+import { fetchFundamentals, FundamentalsData } from "./fundamentalsService";
 
 export interface AnalysisParameters {
   market_type?: "A股";
@@ -17,11 +18,6 @@ export interface AnalysisParameters {
 
 interface SentimentData {
   score: number;
-}
-
-interface FundamentalsData {
-  pe: number;
-  growth: number;
 }
 
 interface TradePlan {
@@ -124,72 +120,69 @@ export async function runAnalysis({
   const marketInfo: MarketInfo = detectMarket(symbol);
   const includeMarket =
     normalizedParameters.selected_analysts.includes("market");
-  const includeNews =
-    normalizedParameters.selected_analysts.includes("news");
+  const includeNews = normalizedParameters.selected_analysts.includes("news");
 
-  // 1) 数据获取：此处为占位实现，便于后续接入行情、新闻、情绪、财报服务
-  const marketData = includeMarket
-    ? await fetchMarketData(symbol, normalizedAnalysisDate)
-    : null;
-  const newsData = includeNews ? await fetchNews(symbol) : [];
-  const sentimentData = await fetchSentiment(symbol);
-  const fundamentalsData = await fetchFundamentals(symbol);
-
-  // 2) 分析师阶段：拼装报告
-  const marketReport = includeMarket
-    ? buildMarketReport(marketData, marketInfo)
-    : "【市场】未选择市场分析";
-  const newsReport = buildNewsReport(newsData);
-  const sentimentReport = buildSentimentReport(sentimentData);
+  // 1) 数据获取
+  // const marketData = includeMarket
+  //   ? await fetchMarketData(symbol, normalizedAnalysisDate)
+  //   : null;
+  // const newsData = includeNews ? await fetchNews(symbol) : [];
+  // const sentimentData = await fetchSentiment(symbol);
+  const fundamentalsData = await fetchFundamentals(
+    symbol,
+    normalizedAnalysisDate
+  );
+  // // 2) 分析师阶段：拼装报告
+  // const marketReport = includeMarket
+  //   ? buildMarketReport(marketData, marketInfo)
+  //   : "【市场】未选择市场分析";
+  // const newsReport = buildNewsReport(newsData);
+  // const sentimentReport = buildSentimentReport(sentimentData);
   const fundamentalsReport = buildFundamentalsReport(fundamentalsData);
+  console.log(fundamentalsData);
+  // // 3) 多空辩论与研究结论
+  // const bullView = buildBullView(marketReport, fundamentalsReport);
+  // const bearView = buildBearView(sentimentReport, newsReport);
+  // const researchDecision = synthesizeResearch(bullView, bearView);
 
-  // 3) 多空辩论与研究结论
-  const bullView = buildBullView(marketReport, fundamentalsReport);
-  const bearView = buildBearView(sentimentReport, newsReport);
-  const researchDecision = synthesizeResearch(bullView, bearView);
+  // // 4) 交易与风险
+  // const tradePlan = buildTradePlan(researchDecision);
+  // const riskDecision = evaluateRisk(tradePlan);
 
-  // 4) 交易与风险
-  const tradePlan = buildTradePlan(researchDecision);
-  const riskDecision = evaluateRisk(tradePlan);
-
-  // 5) 汇总结果
-  return {
-    analysis_id: `${symbol}-${Date.now()}`,
-    stock_symbol: symbol,
-    analysis_date: normalizedAnalysisDate,
-    summary: tradePlan.summary,
-    recommendation: tradePlan.recommendation,
-    confidence_score: tradePlan.confidence,
-    risk_level: riskDecision.level,
-    key_points: tradePlan.keyPoints,
-    reports: {
-      market_report: marketReport,
-      news_report: newsReport,
-      sentiment_report: sentimentReport,
-      fundamentals_report: fundamentalsReport,
-      investment_plan: researchDecision,
-      trader_investment_plan: tradePlan.recommendation,
-      final_trade_decision: tradePlan.recommendation,
-      risk_management_decision: riskDecision.detail,
-    },
-    decision: {
-      action: tradePlan.action,
-      target_price: tradePlan.target,
-      confidence: tradePlan.confidence,
-      risk_score: riskDecision.score,
-      reasoning: tradePlan.reasoning,
-      model_info: "rule-based-mock",
-    },
-    performance_metrics: { exec_ms: 0 },
-  };
+  // // 5) 汇总结果
+  // return {
+  //   analysis_id: `${symbol}-${Date.now()}`,
+  //   stock_symbol: symbol,
+  //   analysis_date: normalizedAnalysisDate,
+  //   summary: tradePlan.summary,
+  //   recommendation: tradePlan.recommendation,
+  //   confidence_score: tradePlan.confidence,
+  //   risk_level: riskDecision.level,
+  //   key_points: tradePlan.keyPoints,
+  //   reports: {
+  //     market_report: marketReport,
+  //     news_report: newsReport,
+  //     sentiment_report: sentimentReport,
+  //     fundamentals_report: fundamentalsReport,
+  //     investment_plan: researchDecision,
+  //     trader_investment_plan: tradePlan.recommendation,
+  //     final_trade_decision: tradePlan.recommendation,
+  //     risk_management_decision: riskDecision.detail,
+  //   },
+  //   decision: {
+  //     action: tradePlan.action,
+  //     target_price: tradePlan.target,
+  //     confidence: tradePlan.confidence,
+  //     risk_score: riskDecision.score,
+  //     reasoning: tradePlan.reasoning,
+  //     model_info: "rule-based-mock",
+  //   },
+  //   performance_metrics: { exec_ms: 0 },
+  // };
 }
 
 async function fetchSentiment(_symbol: string): Promise<SentimentData> {
   return { score: 0.2 };
-}
-
-async function fetchFundamentals(_symbol: string): Promise<FundamentalsData> {
-  return { pe: 15, growth: 0.12 };
 }
 
 function buildMarketReport(
@@ -208,9 +201,31 @@ function buildSentimentReport(sentiment: SentimentData): string {
 }
 
 function buildFundamentalsReport(fundamentals: FundamentalsData): string {
-  return `【基本面】PE=${fundamentals.pe}，增长=${(
-    fundamentals.growth * 100
-  ).toFixed(1)}%`;
+  const peText = formatNumber(fundamentals.pe);
+  const peTtmText = fundamentals.peTtm
+    ? formatNumber(fundamentals.peTtm)
+    : peText;
+  const pbText = formatNumber(fundamentals.pb);
+  const roeText = formatPercent(fundamentals.roe);
+  const roaText = formatPercent(fundamentals.roa);
+  const growthText = formatPercent(fundamentals.growth * 100);
+  const netMarginText = formatPercent(fundamentals.netMargin);
+  const grossMarginText = formatPercent(fundamentals.grossMargin);
+  const debtText = formatPercent(fundamentals.debtRatio);
+  const currentRatioText = formatNumber(fundamentals.currentRatio);
+  const quickRatioText = formatNumber(fundamentals.quickRatio);
+  const psText = formatNumber(fundamentals.ps);
+  const mvText =
+    fundamentals.marketCap && fundamentals.marketCap > 0
+      ? `，总市值≈${(fundamentals.marketCap / 10000).toFixed(2)}亿元`
+      : "";
+  const sourceText = fundamentals.source
+    ? `（来源：${fundamentals.source}）`
+    : "";
+  const riskText = fundamentals.riskLevel
+    ? `，风险=${fundamentals.riskLevel}`
+    : "";
+  return `【基本面】PE=${peText}/TTM=${peTtmText}，PB=${pbText}，PS=${psText}，ROE=${roeText}，ROA=${roaText}，净利率=${netMarginText}，毛利率=${grossMarginText}，资产负债率=${debtText}，流动比率=${currentRatioText}，速动比率=${quickRatioText}，增长=${growthText}${mvText}${riskText}${sourceText}`;
 }
 
 function buildBullView(
@@ -270,4 +285,14 @@ function validateSymbol(symbol: string, analysisDate: string): void {
 function detectMarket(_symbol: string): MarketInfo {
   // 当前仅支持 A 股，默认使用人民币计价
   return { market: "A股", currency: "CNY" };
+}
+
+function formatNumber(value: number): string {
+  if (!Number.isFinite(value)) return "0.00";
+  return value.toFixed(2);
+}
+
+function formatPercent(value: number): string {
+  if (!Number.isFinite(value)) return "0.00%";
+  return `${value.toFixed(2)}%`;
 }
